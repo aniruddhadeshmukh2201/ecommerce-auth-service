@@ -1,52 +1,142 @@
 package com.ecommerce.auth.auth_service.service;
 
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.keycloak.representations.idm.UserRepresentation;
 import org.springframework.stereotype.Service;
 
 import com.ecommerce.auth.auth_service.dto.AuthResponse;
+import com.ecommerce.auth.auth_service.dto.KeycloakUserDTO;
 import com.ecommerce.auth.auth_service.dto.LoginRequest;
 import com.ecommerce.auth.auth_service.dto.SignupRequest;
-import com.ecommerce.auth.auth_service.model.User;
-import com.ecommerce.auth.auth_service.repository.UserRepository;
-import com.ecommerce.auth.auth_service.security.JwtUtil;
-import com.ecommerce.auth.enums.Role;
 
 @Service
 public class AuthService {
 
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtUtil jwtUtil;
+    private final KeycloakService keycloakService;
 
-    public AuthService(UserRepository userRepository,
-                       PasswordEncoder passwordEncoder,
-                       JwtUtil jwtUtil) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.jwtUtil = jwtUtil;
+    public AuthService(KeycloakService keycloakService) {
+        this.keycloakService = keycloakService;
     }
 
+    /**
+     * Register a new user in Keycloak
+     */
     public AuthResponse signup(SignupRequest request) {
-        User user = new User();
-        user.setEmail(request.getEmail());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setRole(Role.USER);
+        try {
+            // Validate input
+            if (request.getEmail() == null || request.getPassword() == null) {
+                return new AuthResponse(null, null, null, null, 
+                    "Email and password are required", false);
+            }
 
-        userRepository.save(user);
+            // Create user in Keycloak
+            KeycloakUserDTO user = keycloakService.createUser(
+                request.getEmail(),
+                request.getPassword(),
+                request.getFirstName(),
+                request.getLastName()
+            );
 
-        String token = jwtUtil.generateToken(user.getEmail());
-        return new AuthResponse(token);
+            return new AuthResponse(
+                user.getUserId(),
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                "User registered successfully",
+                true
+            );
+        } catch (Exception e) {
+            return new AuthResponse(null, null, null, null,
+                "Signup failed: " + e.getMessage(), false);
+        }
     }
 
+    /**
+     * Authenticate user with Keycloak
+     */
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        try {
+            // Validate input
+            if (request.getEmail() == null || request.getPassword() == null) {
+                return new AuthResponse(null, null, null, null,
+                    "Email and password are required", false);
+            }
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new RuntimeException("Invalid credentials");
+            // Authenticate user with Keycloak
+            keycloakService.authenticateUser(request.getEmail(), request.getPassword());
+
+            // Get user details from Keycloak
+            UserRepresentation user = keycloakService.getUserByEmail(request.getEmail());
+
+            return new AuthResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                "Login successful",
+                true
+            );
+        } catch (Exception e) {
+            return new AuthResponse(null, null, null, null,
+                "Login failed: Invalid credentials", false);
         }
+    }
 
-        String token = jwtUtil.generateToken(user.getEmail());
-        return new AuthResponse(token);
+    /**
+     * Get user profile
+     */
+    public AuthResponse getUserProfile(String userId) {
+        try {
+            UserRepresentation user = keycloakService.getUserById(userId);
+            
+            return new AuthResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                "User retrieved successfully",
+                true
+            );
+        } catch (Exception e) {
+            return new AuthResponse(null, null, null, null,
+                "Failed to retrieve user: " + e.getMessage(), false);
+        }
+    }
+
+    /**
+     * Update user profile
+     */
+    public AuthResponse updateUserProfile(String userId, String firstName, String lastName) {
+        try {
+            keycloakService.updateUser(userId, firstName, lastName);
+            
+            UserRepresentation user = keycloakService.getUserById(userId);
+            
+            return new AuthResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getFirstName(),
+                user.getLastName(),
+                "User updated successfully",
+                true
+            );
+        } catch (Exception e) {
+            return new AuthResponse(null, null, null, null,
+                "Failed to update user: " + e.getMessage(), false);
+        }
+    }
+
+    /**
+     * Delete user account
+     */
+    public AuthResponse deleteUser(String userId) {
+        try {
+            keycloakService.deleteUser(userId);
+            
+            return new AuthResponse(null, null, null, null,
+                "User deleted successfully", true);
+        } catch (Exception e) {
+            return new AuthResponse(null, null, null, null,
+                "Failed to delete user: " + e.getMessage(), false);
+        }
     }
 }

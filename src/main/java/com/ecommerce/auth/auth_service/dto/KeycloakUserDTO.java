@@ -5,14 +5,13 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Getter @Setter
+@Getter
+@Setter
 @AllArgsConstructor
 @NoArgsConstructor
-public class AuthResponse {
+public class KeycloakUserDTO {
     private String userId;
     private String email;
     private String firstName;
     private String lastName;
-    private String message;
-    private Boolean success;
 }
